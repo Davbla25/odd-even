@@ -8,7 +8,8 @@
 #include <smmintrin.h>   // Librería para SSE4.1
 
 #define ARRAY_SIZE 50000 
-#define TRACE_SIZE 50    // Para el trazado visual de Python
+#define TRACE_SIZE 50    
+#define NUM_RUNS 15      // Número de ejecuciones para calcular la media
 
 // ---------------------------------------------------------
 // 1. VERSIÓN C ESTÁNDAR (Optimizada con Early-Exit)
@@ -115,10 +116,9 @@ void odd_even_sort_sse(int* arr, int n) {
             __m128i v_max = _mm_max_epi32(v, v_swapped);
             __m128i v_res = _mm_blend_epi16(v_min, v_max, 0xCC);
 
-            // Truco mágico: Comparar si el vector original y el ordenado son iguales
             __m128i cmp = _mm_cmpeq_epi32(v, v_res);
             if (_mm_movemask_epi8(cmp) != 0xFFFF) {
-                is_sorted = false; // Si no son iguales, hubo un intercambio
+                is_sorted = false;
             }
 
             _mm_storeu_si128((__m128i*) & arr[j], v_res);
@@ -194,7 +194,6 @@ void generate_visual_trace(const char* filename, int n) {
     fprintf(f, "END\n");
     fclose(f);
     free(arr);
-    printf("[+] Archivo 'trace.txt' generado para Pygame.\n");
 }
 
 // ---------------------------------------------------------
@@ -208,12 +207,12 @@ bool is_sorted(int* arr, int n) {
 }
 
 // ---------------------------------------------------------
-// MAIN Y MEDICIÓN DE TIEMPOS
+// MAIN Y MEDICIÓN DE TIEMPOS ESTADÍSTICA
 // ---------------------------------------------------------
 int main() {
     srand(42);
 
-    // 1. Generar traza visual
+    // 1. Generar traza visual para Python (se hace 1 sola vez)
     generate_visual_trace("trace.txt", TRACE_SIZE);
 
     // 2. Preparar arrays para el Benchmark
@@ -221,61 +220,91 @@ int main() {
     int* arr_asm = (int*)malloc(ARRAY_SIZE * sizeof(int));
     int* arr_sse = (int*)malloc(ARRAY_SIZE * sizeof(int));
 
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-        int val = rand() % 100000;
-        arr_c[i] = val;
-        arr_asm[i] = val;
-        arr_sse[i] = val;
+    if (!arr_c || !arr_asm || !arr_sse) {
+        printf("Error asignando memoria.\n");
+        return -1;
     }
 
-    printf("\n========================================\n");
-    printf(" BENCHMARK ODD-EVEN: C vs ASM vs SSE\n");
-    printf("========================================\n");
+    printf("\n======================================================\n");
+    printf("   BENCHMARK ODD-EVEN: C vs ASM vs SSE (SIMD)\n");
+    printf("   Elementos a ordenar : %d\n", ARRAY_SIZE);
+    printf("   Numero de pruebas   : %d\n", NUM_RUNS);
+    printf("======================================================\n\n");
 
-    clock_t start, end;
-    double time_c, time_asm, time_sse;
+    double total_time_c = 0.0, total_time_asm = 0.0, total_time_sse = 0.0;
+    bool all_correct = true;
 
-    // --- Medir C ---
-    start = clock();
-    odd_even_sort_c(arr_c, ARRAY_SIZE);
-    end = clock();
-    time_c = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("[*] Tiempo C Estandar   : %.4f segundos\n", time_c);
+    // --- BUCLE DE PRUEBAS ---
+    for (int run = 1; run <= NUM_RUNS; run++) {
 
-    // --- Medir Ensamblador ---
-    start = clock();
-    odd_even_sort_asm(arr_asm, ARRAY_SIZE);
-    end = clock();
-    time_asm = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("[*] Tiempo Ensamblador  : %.4f segundos\n", time_asm);
-
-    // --- Medir SSE ---
-    start = clock();
-    odd_even_sort_sse(arr_sse, ARRAY_SIZE);
-    end = clock();
-    time_sse = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("[*] Tiempo SIMD (SSE)   : %.4f segundos\n", time_sse);
-
-    // --- Comprobación ---
-    bool correct_c = is_sorted(arr_c, ARRAY_SIZE);
-    bool correct_asm = is_sorted(arr_asm, ARRAY_SIZE);
-    bool correct_sse = is_sorted(arr_sse, ARRAY_SIZE);
-
-    printf("----------------------------------------\n");
-    if (correct_c && correct_asm && correct_sse) {
-        printf("VERIFICADO: Los tres arrays ordenados con exito.\n");
-        printf("\n>>> RESULTADOS DE RENDIMIENTO <<<\n");
-        if (time_asm > 0) {
-            printf("- ASM es %.2fx veces mas rapido que C\n", time_c / time_asm);
+        // Rellenar con nuevos datos aleatorios para esta pasada
+        // Así nos aseguramos de que no están ordenando un array ya ordenado
+        for (int i = 0; i < ARRAY_SIZE; i++) {
+            int val = rand() % 100000;
+            arr_c[i] = val;
+            arr_asm[i] = val;
+            arr_sse[i] = val;
         }
-        if (time_sse > 0) {
-            printf("- SSE es %.2fx veces mas rapido que C\n", time_c / time_sse);
+
+        clock_t start, end;
+        double t_c, t_asm, t_sse;
+
+        // Medir C
+        start = clock();
+        odd_even_sort_c(arr_c, ARRAY_SIZE);
+        end = clock();
+        t_c = (double)(end - start) / CLOCKS_PER_SEC;
+        total_time_c += t_c;
+
+        // Medir ASM
+        start = clock();
+        odd_even_sort_asm(arr_asm, ARRAY_SIZE);
+        end = clock();
+        t_asm = (double)(end - start) / CLOCKS_PER_SEC;
+        total_time_asm += t_asm;
+
+        // Medir SSE
+        start = clock();
+        odd_even_sort_sse(arr_sse, ARRAY_SIZE);
+        end = clock();
+        t_sse = (double)(end - start) / CLOCKS_PER_SEC;
+        total_time_sse += t_sse;
+
+        // Mostrar progreso por pantalla
+        printf("[Prueba %2d] C: %.4fs | ASM: %.4fs | SSE: %.4fs\n", run, t_c, t_asm, t_sse);
+
+        // Verificación de seguridad en cada pasada
+        if (!is_sorted(arr_c, ARRAY_SIZE) || !is_sorted(arr_asm, ARRAY_SIZE) || !is_sorted(arr_sse, ARRAY_SIZE)) {
+            all_correct = false;
+        }
+    }
+
+    // --- CÁLCULO DE MEDIAS ---
+    double avg_c = total_time_c / NUM_RUNS;
+    double avg_asm = total_time_asm / NUM_RUNS;
+    double avg_sse = total_time_sse / NUM_RUNS;
+
+    printf("\n------------------------------------------------------\n");
+    if (all_correct) {
+        printf(" [VERIFICADO] Todos los arrays ordenados correctamente.\n");
+        printf("------------------------------------------------------\n");
+        printf(">>> TIEMPO MEDIO DE EJECUCION <<<\n");
+        printf("[*] C Estandar  : %.4f segundos\n", avg_c);
+        printf(" [*] Ensamblador : %.4f segundos\n", avg_asm);
+        printf(" [*] SIMD (SSE)  : %.4f segundos\n", avg_sse);
+
+        printf("\n>>> COMPARATIVA DE RENDIMIENTO (SPEEDUP) <<<\n");
+        if (avg_asm > 0) {
+            printf(" - Ganancia ASM : %.2fx veces mas rapido que C\n", avg_c / avg_asm);
+        }
+        if (avg_sse > 0) {
+            printf(" - Ganancia SSE : %.2fx veces mas rapido que C\n", avg_c / avg_sse);
         }
     }
     else {
-        printf("ERROR: Algo ha fallado en la ordenacion.\n");
+        printf(" ERROR CRITICO: Al menos una ordenacion ha fallado.\n");
     }
-    printf("========================================\n");
+    printf("======================================================\n");
 
     free(arr_c);
     free(arr_asm);
