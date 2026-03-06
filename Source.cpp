@@ -9,33 +9,38 @@
 #define TRACE_SIZE 50    // Tamaño más pequeño para que la animación en Python se vea bien
 
 // ---------------------------------------------------------
-// 1. VERSIÓN C ESTÁNDAR (Línea Base)
+// 1. VERSIÓN C ESTÁNDAR
 // ---------------------------------------------------------
 void odd_even_sort_c(int* arr, int n) {
-    for (int i = 0; i < n; i++) {
-        if (i % 2 == 0) {
-            for (int j = 0; j < n - 1; j += 2) {
-                if (arr[j] > arr[j + 1]) {
-                    int temp = arr[j];
-                    arr[j] = arr[j + 1];
-                    arr[j + 1] = temp;
-                }
+    bool is_sorted = false;
+
+    while (!is_sorted) {
+        is_sorted = true; // Asumimos que está ordenado
+
+        // Fase Par
+        for (int j = 0; j < n - 1; j += 2) {
+            if (arr[j] > arr[j + 1]) {
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+                is_sorted = false; // Hubo un cambio, no estaba ordenado
             }
         }
-        else {
-            for (int j = 1; j < n - 1; j += 2) {
-                if (arr[j] > arr[j + 1]) {
-                    int temp = arr[j];
-                    arr[j] = arr[j + 1];
-                    arr[j + 1] = temp;
-                }
+
+        // Fase Impar
+        for (int j = 1; j < n - 1; j += 2) {
+            if (arr[j] > arr[j + 1]) {
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+                is_sorted = false; // Hubo un cambio, no estaba ordenado
             }
         }
     }
 }
 
 // ---------------------------------------------------------
-// 2. VERSIÓN ENSAMBLADOR X86 (Basada en la Guía Pentium)
+// 2. VERSIÓN ENSAMBLADOR X86 
 // ---------------------------------------------------------
 void odd_even_sort_asm(int* arr, int n) {
     if (n <= 1) return;
@@ -43,55 +48,63 @@ void odd_even_sort_asm(int* arr, int n) {
 #if defined(_MSC_VER) && !defined(_WIN64)
     __asm {
         mov edi, arr; EDI = puntero base del array
-        mov ebx, 0; EBX = i = 0 (Contador del bucle externo)
+        mov ecx, n
+        dec ecx; ECX = n - 1 (limite para no salirnos del array)
 
-        bucle_ext:
-        mov eax, n
-            cmp ebx, eax
-            jge fin; Si i >= n, terminamos
+        bucle_principal:
+        mov ebx, 1; EBX sera nuestra bandera 'is_sorted' (1 = True, 0 = False)
 
-            ; Comprobar si 'i' es par o impar(i % 2)
-            mov eax, ebx
-            and eax, 1; AND a nivel de bits.Si bit 0 es 0, es par.
-            jz fase_par; Salta si es cero(Z = 1)
+            ; --- FASE PAR-- -
+            mov esi, 0; j = 0
+            bucle_par:
+        cmp esi, ecx
+            jge fin_fase_par; Si j >= n - 1, terminamos la fase par
 
-            fase_impar:
-        mov esi, 1; ESI = j = 1
-            jmp bucle_int
+            mov eax, [edi + esi * 4]; arr[j]
+            mov edx, [edi + esi * 4 + 4]; arr[j + 1]
+            cmp eax, edx
+            jle no_swap_par; Si arr[j] <= arr[j + 1], no hacer nada
 
-            fase_par :
-        mov esi, 0; ESI = j = 0
-
-            bucle_int:
-        mov eax, n
-            dec eax; EAX = n - 1
-            cmp esi, eax
-            jge fin_bucle_int; Si j >= n - 1, terminamos la pasada
-
-            ; Modo de direccionamiento : Base + Indice * Escala(Guia x86)
-            ; Cada entero ocupa 4 bytes, por eso se multiplica el indice por 4
-            mov ecx, [edi + esi * 4]; Carga arr[j] en ECX
-            mov edx, [edi + esi * 4 + 4]; Carga arr[j + 1] en EDX
-
-            cmp ecx, edx
-            jle no_swap; Si arr[j] <= arr[j + 1], no hace falta intercambiar
-
-            ; Intercambio de variables(SWAP)
+            ; Intercambiar
             mov[edi + esi * 4], edx
-            mov[edi + esi * 4 + 4], ecx
+            mov[edi + esi * 4 + 4], eax
+            mov ebx, 0; is_sorted = false (Hubo intercambio)
 
-            no_swap :
+            no_swap_par:
         add esi, 2; j += 2
-            jmp bucle_int
+            jmp bucle_par
 
-            fin_bucle_int :
-        inc ebx; i++
-            jmp bucle_ext
+            fin_fase_par :
+
+        ; --- FASE IMPAR-- -
+            mov esi, 1; j = 1
+            bucle_impar:
+        cmp esi, ecx
+            jge fin_fase_impar; Si j >= n - 1, terminamos la fase impar
+
+            mov eax, [edi + esi * 4]; arr[j]
+            mov edx, [edi + esi * 4 + 4]; arr[j + 1]
+            cmp eax, edx
+            jle no_swap_impar; Si arr[j] <= arr[j + 1], no hacer nada
+
+            ; Intercambiar
+            mov[edi + esi * 4], edx
+            mov[edi + esi * 4 + 4], eax
+            mov ebx, 0; is_sorted = false (Hubo intercambio)
+
+            no_swap_impar:
+        add esi, 2; j += 2
+            jmp bucle_impar
+
+            fin_fase_impar :
+
+        ; --- COMPROBAR BANDERA-- -
+            cmp ebx, 1
+            jne bucle_principal; Si ebx no es 1 (es decir, hubo algun swap), repetimos todo
 
             fin :
     }
 #else
-    printf("[!] ADVERTENCIA: Bloque ASM no soportado en este entorno. Ejecutando C.\n");
     odd_even_sort_c(arr, n);
 #endif
 }
@@ -99,38 +112,43 @@ void odd_even_sort_asm(int* arr, int n) {
 // ---------------------------------------------------------
 // 3. GENERADOR DE TRAZADO VISUAL (Para Python)
 // ---------------------------------------------------------
-// Simula el algoritmo y genera un archivo de texto con las instrucciones
-// de Comparacion (CMP) e Intercambio (SWP) que ejecutarian tanto C como x86.
 void generate_visual_trace(const char* filename, int n) {
     FILE* f = fopen(filename, "w");
-    if (!f) {
-        printf("[-] ERROR: No se pudo crear el archivo de trazado '%s'\n", filename);
-        return;
-    }
+    if (!f) return;
 
     fprintf(f, "INIT %d\n", n);
 
     int* arr = (int*)malloc(n * sizeof(int));
     fprintf(f, "VALS");
     for (int i = 0; i < n; i++) {
-        arr[i] = (rand() % 100) + 1; // Valores aleatorios del 1 al 100
+        arr[i] = (rand() % 100) + 1;
         fprintf(f, " %d", arr[i]);
     }
     fprintf(f, "\n");
 
-    // Replicamos la logica del Odd-Even Sort para trazarla
-    for (int i = 0; i < n; i++) {
-        int start_j = (i % 2 == 0) ? 0 : 1;
-        for (int j = start_j; j < n - 1; j += 2) {
-            fprintf(f, "CMP %d %d\n", j, j + 1); // Registramos la comparacion
+    // Replicamos el algoritmo  para el archivo
+    bool is_sorted = false;
+    while (!is_sorted) {
+        is_sorted = true;
+
+        for (int j = 0; j < n - 1; j += 2) {
+            fprintf(f, "CMP %d %d\n", j, j + 1);
             if (arr[j] > arr[j + 1]) {
-                fprintf(f, "SWP %d %d\n", j, j + 1); // Registramos el intercambio
-                int temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
+                fprintf(f, "SWP %d %d\n", j, j + 1);
+                int temp = arr[j]; arr[j] = arr[j + 1]; arr[j + 1] = temp;
+                is_sorted = false;
+            }
+        }
+        for (int j = 1; j < n - 1; j += 2) {
+            fprintf(f, "CMP %d %d\n", j, j + 1);
+            if (arr[j] > arr[j + 1]) {
+                fprintf(f, "SWP %d %d\n", j, j + 1);
+                int temp = arr[j]; arr[j] = arr[j + 1]; arr[j + 1] = temp;
+                is_sorted = false;
             }
         }
     }
+
     fprintf(f, "END\n");
     fclose(f);
     free(arr);
