@@ -6,6 +6,7 @@
 #include <time.h> 
 
 #define ARRAY_SIZE 50000 
+#define TRACE_SIZE 50    // Tamaño más pequeño para que la animación en Python se vea bien
 
 // ---------------------------------------------------------
 // 1. VERSIÓN C ESTÁNDAR (Línea Base)
@@ -34,13 +35,11 @@ void odd_even_sort_c(int* arr, int n) {
 }
 
 // ---------------------------------------------------------
-// 2. VERSIÓN ENSAMBLADOR X86 
+// 2. VERSIÓN ENSAMBLADOR X86 (Basada en la Guía Pentium)
 // ---------------------------------------------------------
 void odd_even_sort_asm(int* arr, int n) {
-    // Si el array tiene 1 o menos elementos, no hay que ordenar
     if (n <= 1) return;
 
-    
 #if defined(_MSC_VER) && !defined(_WIN64)
     __asm {
         mov edi, arr; EDI = puntero base del array
@@ -53,24 +52,24 @@ void odd_even_sort_asm(int* arr, int n) {
 
             ; Comprobar si 'i' es par o impar(i % 2)
             mov eax, ebx
-            and eax, 1; AND a nivel de bits.Si el bit 0 es 0, es par.
+            and eax, 1; AND a nivel de bits.Si bit 0 es 0, es par.
             jz fase_par; Salta si es cero(Z = 1)
 
             fase_impar:
-            mov esi, 1; ESI = j = 1
+        mov esi, 1; ESI = j = 1
             jmp bucle_int
 
             fase_par :
-            mov esi, 0; ESI = j = 0
+        mov esi, 0; ESI = j = 0
 
             bucle_int:
-            mov eax, n
+        mov eax, n
             dec eax; EAX = n - 1
             cmp esi, eax
             jge fin_bucle_int; Si j >= n - 1, terminamos la pasada
 
-            ; Modo de direccionamiento : Base + Indice * Escala(Pág. 16 de la guía)
-            ; Cada int ocupa 4 bytes, por eso se multiplica por 4.
+            ; Modo de direccionamiento : Base + Indice * Escala(Guia x86)
+            ; Cada entero ocupa 4 bytes, por eso se multiplica el indice por 4
             mov ecx, [edi + esi * 4]; Carga arr[j] en ECX
             mov edx, [edi + esi * 4 + 4]; Carga arr[j + 1] en EDX
 
@@ -82,21 +81,60 @@ void odd_even_sort_asm(int* arr, int n) {
             mov[edi + esi * 4 + 4], ecx
 
             no_swap :
-            add esi, 2; j += 2
+        add esi, 2; j += 2
             jmp bucle_int
 
             fin_bucle_int :
-            inc ebx; i++
+        inc ebx; i++
             jmp bucle_ext
 
             fin :
     }
 #else
-    // Si compilas en 64 bits por error, el ensamblador inline no funcionará.
-    // Llamamos a la versión de C para que no reviente el programa.
-    printf("[!] ADVERTENCIA: Compilado en 64-bits. Ejecutando version C en su lugar.\n");
+    printf("[!] ADVERTENCIA: Bloque ASM no soportado en este entorno. Ejecutando C.\n");
     odd_even_sort_c(arr, n);
 #endif
+}
+
+// ---------------------------------------------------------
+// 3. GENERADOR DE TRAZADO VISUAL (Para Python)
+// ---------------------------------------------------------
+// Simula el algoritmo y genera un archivo de texto con las instrucciones
+// de Comparacion (CMP) e Intercambio (SWP) que ejecutarian tanto C como x86.
+void generate_visual_trace(const char* filename, int n) {
+    FILE* f = fopen(filename, "w");
+    if (!f) {
+        printf("[-] ERROR: No se pudo crear el archivo de trazado '%s'\n", filename);
+        return;
+    }
+
+    fprintf(f, "INIT %d\n", n);
+
+    int* arr = (int*)malloc(n * sizeof(int));
+    fprintf(f, "VALS");
+    for (int i = 0; i < n; i++) {
+        arr[i] = (rand() % 100) + 1; // Valores aleatorios del 1 al 100
+        fprintf(f, " %d", arr[i]);
+    }
+    fprintf(f, "\n");
+
+    // Replicamos la logica del Odd-Even Sort para trazarla
+    for (int i = 0; i < n; i++) {
+        int start_j = (i % 2 == 0) ? 0 : 1;
+        for (int j = start_j; j < n - 1; j += 2) {
+            fprintf(f, "CMP %d %d\n", j, j + 1); // Registramos la comparacion
+            if (arr[j] > arr[j + 1]) {
+                fprintf(f, "SWP %d %d\n", j, j + 1); // Registramos el intercambio
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+    fprintf(f, "END\n");
+    fclose(f);
+    free(arr);
+    printf("[+] Archivo '%s' generado CON EXITO para la animacion en Python.\n", filename);
 }
 
 // ---------------------------------------------------------
@@ -110,10 +148,14 @@ bool is_sorted(int* arr, int n) {
 }
 
 // ---------------------------------------------------------
-// 3. MAIN Y MEDICIÓN DE TIEMPOS
+// MAIN Y MEDICIÓN DE TIEMPOS
 // ---------------------------------------------------------
 int main() {
-    // Memoria estándar (sin librerías raras)
+    // 1. Generar primero el archivo para la animacion en Python (Array pequeño)
+    srand(42);
+    generate_visual_trace("trace.txt", TRACE_SIZE);
+
+    // 2. Preparar el Benchmark (Array inmenso)
     int* arr_c = (int*)malloc(ARRAY_SIZE * sizeof(int));
     int* arr_asm = (int*)malloc(ARRAY_SIZE * sizeof(int));
 
@@ -122,15 +164,15 @@ int main() {
         return -1;
     }
 
-    srand(42);
     for (int i = 0; i < ARRAY_SIZE; i++) {
         int val = rand() % 100000;
         arr_c[i] = val;
         arr_asm[i] = val;
     }
 
-    printf("========================================\n");
+    printf("\n========================================\n");
     printf(" BENCHMARK ODD-EVEN: C vs ENSAMBLADOR\n");
+    printf(" Elementos a ordenar: %d\n", ARRAY_SIZE);
     printf("========================================\n");
 
     clock_t start, end;
@@ -164,7 +206,7 @@ int main() {
 
     printf("----------------------------------------\n");
     if (correct_c && correct_asm && match) {
-        printf("VERIFICADO: Ambos arrays ordenados con exito.\n");
+        printf("VERIFICADO: Ambos arrays ordenados con exito y coinciden.\n");
         if (time_asm > 0) {
             printf(">>> RENDIMIENTO: El codigo ASM es %.2fx en comparacion <<<\n", time_c / time_asm);
         }
